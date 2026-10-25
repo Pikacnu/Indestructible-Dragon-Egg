@@ -2,6 +2,12 @@
 
 > Actually I Don't know how to name it due to this plugin is build for my friend and I add more function base on his Idea.
 
+## How To Use?
+
+go to telease,
+download the jar.
+put jar in plugin (paper only)
+
 ## Functions:
 
 1. Command To Get Compass Which Will Pos to Player That Hold DragonEgg. `/degg give compass`
