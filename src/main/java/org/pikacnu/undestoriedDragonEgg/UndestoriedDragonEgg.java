@@ -9,11 +9,13 @@ import io.papermc.paper.registry.RegistryAccess;
 import io.papermc.paper.registry.RegistryKey;
 import io.papermc.paper.registry.set.RegistryKeySet;
 import io.papermc.paper.registry.set.RegistrySet;
+import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.*;
+import org.bukkit.command.CommandSender;
 import org.bukkit.damage.DamageType;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
@@ -163,13 +165,29 @@ public final class UndestoriedDragonEgg extends JavaPlugin implements Listener {
                     boolean isBossBarOpen = playerBossbarIndicator.IsPlayerInitial(player.getUniqueId());
                     if( minTargetLocation !=null ){
                         if (isBossBarOpen) {
-                            playerBossbarIndicator.GetBossBarFromPlayer(player.getUniqueId())
-                                    .name(
+                            BossBar bossbar = playerBossbarIndicator.GetBossBarFromPlayer(player.getUniqueId());
+                            bossbar.name(
                                             Component.text("Target Position is : ", NamedTextColor.GREEN)
                                                     .append(
                                                             Component.text(minTargetLocation.getBlockX() + ", " + minTargetLocation.getBlockY() + ", " + minTargetLocation.getBlockZ(), NamedTextColor.YELLOW)
                                                     )
                                     );
+
+                            double distance = player.getLocation().distance(minTargetLocation);
+                            bossbar.progress((float) (1 - distance / 500 ));
+                            if (distance > 500){
+                                bossbar.color(BossBar.Color.PURPLE);
+                            } else if (distance > 250) {
+                                bossbar.color(BossBar.Color.BLUE);
+                            } else if (distance > 100) {
+                                bossbar.color(BossBar.Color.PINK);
+                            } else if (distance > 50) {
+                                bossbar.color(BossBar.Color.YELLOW);
+                            } else if (distance > 25) {
+                                bossbar.color(BossBar.Color.GREEN);
+                            }else {
+                                bossbar.color(BossBar.Color.WHITE);
+                            }
                         }
                         for (ItemStack itemStack : trackerCompasses){
                             CompassMeta meta = (CompassMeta) itemStack.getItemMeta();
@@ -200,6 +218,7 @@ public final class UndestoriedDragonEgg extends JavaPlugin implements Listener {
 
             });
         },0L,5L);
+
         getServer().getWorlds().forEach((wordData)->{
             for (Entity entity : wordData.getEntities()) {
                 // For Track DragonEggEntity
@@ -232,7 +251,8 @@ public final class UndestoriedDragonEgg extends JavaPlugin implements Listener {
                                 if (meta != null){
                                     meta.displayName(Component.text("Dragon Egg Tracker").decorate(TextDecoration.BOLD).decoration(TextDecoration.ITALIC,false));
                                     meta.lore(List.of(
-                                            Component.text("Tracker of DragonEgg").decorate(TextDecoration.BOLD).color(TextColor.color(255, 252, 77))
+                                            Component.text("Tracker of DragonEgg").decorate(TextDecoration.BOLD).color(TextColor.color(255, 252, 77)),
+                                            Component.text("Right click can toggle boosbar tracker").decorate(NamedTextColor.GRAY)
                                     ));
                                     Location lot = new Location(sourceEntity.getWorld(),0.0d,0.0d,0.0d);
                                     meta.setLodestone(lot);
@@ -252,6 +272,13 @@ public final class UndestoriedDragonEgg extends JavaPlugin implements Listener {
                                 return 1;
                             })
                     )
+                )
+                .then(
+                        Commands.literal("help")
+                                .executes(context ->{
+                                    CommandSender sender = context.getSource().getSender();
+                                    sender.sendMessage(Component.text("This plugin in design to keep track of dragon eggs and Prevent it disappear.",NamedTextColor.YELLOW));
+                                })
                 );
         LiteralCommandNode<CommandSourceStack> buildCommand = command.build();
         this.getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, event -> event.registrar().register(buildCommand));
