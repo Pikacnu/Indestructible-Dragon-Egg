@@ -97,7 +97,6 @@ public final class UndestoriedDragonEgg extends JavaPlugin implements Listener {
                 return;
             });
         },0L,5L);
-        // Init The DragonEgg Entity Status
         getServer().getWorlds().forEach((wordData)->{
             for (Entity entity : wordData.getEntities()) {
                 // For Track DragonEggEntity
@@ -109,7 +108,6 @@ public final class UndestoriedDragonEgg extends JavaPlugin implements Listener {
                         }
                     }
                 }
-                // For Update User Compass Tracking Data
                 if (entity instanceof Player player){
                     for (ItemStack itemStack : player.getInventory().getContents()){
                         String PlayerUUIDString = player.getUniqueId().toString();
@@ -206,14 +204,12 @@ public final class UndestoriedDragonEgg extends JavaPlugin implements Listener {
     public void onItemDropped(PlayerDropItemEvent event) {
         Item item = event.getItemDrop();
         ItemStack stack = item.getItemStack();
-        //getServer().broadcast(Component.text("Item Dropped: " + stack.getType()));
         if (stack.getType() != Material.DRAGON_EGG) return;
         registry.AddPair(event.getPlayer().getUniqueId().toString(), item.getUniqueId().toString());
     }
 
     @EventHandler(ignoreCancelled = true)
     public void onEggPickup(EntityPickupItemEvent event) {
-        // 檢查被撿起的是不是我們正在追蹤的那顆蛋
         if (registry.HasEgg(event.getItem().getUniqueId())) {
             registry.RemovePairFromEggItemID(event.getItem().getUniqueId());
         }
@@ -251,13 +247,12 @@ public final class UndestoriedDragonEgg extends JavaPlugin implements Listener {
 
         event.setCancelled(true);
 
-        if (cause == EntityDamageEvent.DamageCause.LAVA) {// 強制關閉視覺著火特效 (設為 0 ticks)
+        if (cause == EntityDamageEvent.DamageCause.LAVA) {
             item.setFireTicks(0);
             Vector velocity = item.getVelocity();
             item.setVelocity(new Vector(velocity.getX(), 0.2, velocity.getZ()));
             event.setCancelled(true);
         } else {
-            // 對於其他傷害來源，直接取消傷害
             event.setCancelled(true);
         }
     }
@@ -290,21 +285,14 @@ public final class UndestoriedDragonEgg extends JavaPlugin implements Listener {
 
             double distance = playerLocation.distance(itemLocation);
             if (distance > 10) {
-                // 如果玩家與物品的距離大於 10，將物品傳送到玩家位置
                 item.teleport(playerLocation);
                 return;
             }
             if (player.getWorld() != item.getWorld()) {
-                // 如果玩家與物品不在同一個世界，將物品傳送到玩家位置
                 item.teleport(playerLocation);
             }
         }
     }
-
-
-    // 龍蛋虛空會傳送到 ThrownPlayer
-    // 龍蛋在遠離 丟出的人 10 格遠時會傳送到使用者身上
-    // 持有者進入虛空時會把龍蛋給到最近的玩家身
 
     @EventHandler(ignoreCancelled = true)
     public void onRightClick(PlayerInteractEntityEvent event){
