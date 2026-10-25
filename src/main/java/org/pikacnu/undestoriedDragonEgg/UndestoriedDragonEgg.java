@@ -22,6 +22,7 @@ import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.entity.ItemSpawnEvent;
@@ -29,6 +30,7 @@ import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
+import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
@@ -350,6 +352,9 @@ public final class UndestoriedDragonEgg extends JavaPlugin implements Listener {
     public void onPlayerInteract(PlayerInteractEvent event){
         Player player = event.getPlayer();
         ItemStack playerHandItem = event.getItem();
+        Action action = event.getAction();
+        if (!action.isRightClick() && !(action == Action.RIGHT_CLICK_AIR || action == Action.RIGHT_CLICK_BLOCK)) return;
+        if(event.getHand() != EquipmentSlot.HAND) return;
         if (playerHandItem == null) return;
         if(playerHandItem.getType() != Material.COMPASS) return;
         CompassMeta meta = (CompassMeta) playerHandItem.getItemMeta();
@@ -359,7 +364,7 @@ public final class UndestoriedDragonEgg extends JavaPlugin implements Listener {
             player.sendMessage(Component.text("In Cooldown, Try again later",NamedTextColor.RED));
             return;
         }
-        getServer().broadcast(Component.text("Player Handle Tracker Compass"));
+        //getServer().broadcast(Component.text("Player Handle Tracker Compass"));
         if (playerBossbarIndicator.IsPlayerInitial(player.getUniqueId())){
             playerBossbarIndicator.RemovePlayer(player.getUniqueId());
         }else{
