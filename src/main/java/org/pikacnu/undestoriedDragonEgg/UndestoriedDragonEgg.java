@@ -9,7 +9,6 @@ import io.papermc.paper.registry.RegistryAccess;
 import io.papermc.paper.registry.RegistryKey;
 import io.papermc.paper.registry.set.RegistryKeySet;
 import io.papermc.paper.registry.set.RegistrySet;
-import net.kyori.adventure.bossbar.BossBar;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
@@ -29,7 +28,6 @@ import org.bukkit.event.entity.ItemSpawnEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
-import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
@@ -49,11 +47,10 @@ public final class UndestoriedDragonEgg extends JavaPlugin implements Listener {
     private static BukkitScheduler scheduler = Bukkit.getScheduler();
     private static BukkitTask task;
 
-    private static Cooldown playerToggleTrackerCooldown = new Cooldown(2*20); // 2 * 20 ticks
-    private static Indicator playerBossbarIndicator = new Indicator();
+    private static final Cooldown playerToggleTrackerCooldown = new Cooldown(2*20); // 2 * 20 ticks
+    private static final Indicator playerBossbarIndicator = new Indicator();
 
     private final NamespacedKey TrackerNSKey = new NamespacedKey(this,"tracker");
-    private final NamespacedKey MarkedUUID = new NamespacedKey(this,"eggEntityUUID");
 
     @Override
     public void onEnable() {
@@ -66,21 +63,17 @@ public final class UndestoriedDragonEgg extends JavaPlugin implements Listener {
             // process dropped Egg
             // prevent item dropped into void
             // and tp back to player
-            for (UUID eggItemUUID : registry.getAllEggItemIDs()) {
-                if (eggItemUUID == null) continue;
+            for (UUID eggItemUUID : registry.getAllDroppedEggItemIDs()) {
                 Entity entity = getServer().getEntity(eggItemUUID);
 
                 if (!(entity instanceof Item item) || !item.isValid()) {
-                    registry.removePairFromItemEntityUUID(eggItemUUID);
+                    registry.removeDroppedEgg(eggItemUUID);
                     continue;
                 }
 
                 Location itemLocation = item.getLocation();
-
                 if (itemLocation.getBlockY() < -64) {
-                    // if inside void
                     item.setGravity(false);
-                    // try to find nesrest player in same world to tp to
                     Player nearestPlayer = null;
                     double minDistance = Double.MAX_VALUE;
 
@@ -98,8 +91,20 @@ public final class UndestoriedDragonEgg extends JavaPlugin implements Listener {
                         item.setGravity(true);
                     }
                 } else {
-                    // if not at void remove floating
                     item.setGravity(true);
+                }
+
+                UUID throwerUUID = registry.getThrowerByEggItemUUID(eggItemUUID);
+                if (throwerUUID != null){
+                    Player thrower = getServer().getPlayer(throwerUUID);
+                    if(thrower != null && thrower.isOnline()){
+                        if(!thrower.getWorld().equals(item.getWorld())){
+                            item.teleport(thrower.getLocation());
+                        }else if (itemLocation.distance(thrower.getLocation()) > 10){
+                            item.teleport((thrower.getLocation()));
+                            item.setPickupDelay(10);
+                        }
+                    }
                 }
             }
 
@@ -107,10 +112,7 @@ public final class UndestoriedDragonEgg extends JavaPlugin implements Listener {
             getServer().getOnlinePlayers().forEach(player -> {
                 // Check Player Inventory And Get Item's First
                 boolean isEggInsidePlayer = false;
-                boolean isCompassInsidePlayer = false;
-                boolean isPlayerOpenBossbarIndicator = playerBossbarIndicator.IsPlayerInitial(player.getUniqueId());
-
-                ArrayList<ItemStack> CompassItemStacks = new ArrayList<>();
+                ArrayList<ItemStack> trackerCompasses = new ArrayList<>();
 
                 for (ItemStack itemStack : player.getInventory().getContents()) {
                     if (itemStack == null) continue;
@@ -120,150 +122,82 @@ public final class UndestoriedDragonEgg extends JavaPlugin implements Listener {
                     }
                     if (itemStack.getType() == Material.COMPASS){
                         ItemMeta meta = itemStack.getItemMeta();
-                        if(meta != null){
-                            if (meta.getPersistentDataContainer().getOrDefault(TrackerNSKey,PersistentDataType.BOOLEAN,false)){
-                                isCompassInsidePlayer = true;
-                                CompassItemStacks.add(itemStack);
-                            }
-
+                        if(meta != null && meta.getPersistentDataContainer().getOrDefault(TrackerNSKey,PersistentDataType.BOOLEAN,false)) {
+                            trackerCompasses.add(itemStack);
                         }
                     }
                 }
+
                 // if Is Egg Inside Player Inventory
                 if (isEggInsidePlayer){
-                    // set And Track It
-                    if (!registry.hasPlayer(player.getUniqueId())){
-                        registry.setPlayerItemKeyPair(player.getUniqueId(),null);
-                    }
+                    registry.addInventoryHolder(player.getUniqueId());
+                }else{
+                    registry.removeInventoryHolder(player.getUniqueId());
                 }
 
-                // update Compass And BossBar
-                if(isCompassInsidePlayer) {
-                    ArrayList<UUID> EntitiesRelatedToEgg = new ArrayList<>();
-                    for(UUID holderUUID : registry.getAllHolderIds()){
-                        UUID ItemEggUUID = registry.getItemEntityUUIDByHolderUUID(holderUUID);
-                        if (ItemEggUUID != null){
-                            Entity EggItem = getServer().getEntity(ItemEggUUID);
-                            if (EggItem != null){
-                                if(EggItem.getWorld().equals(player.getWorld())){
-                                    EntitiesRelatedToEgg.add(ItemEggUUID);
-                                    continue;
-                                }
-                            }
-                        }
-                        if (holderUUID.equals(player.getUniqueId())) continue;
-                        Player holder = getServer().getPlayer(holderUUID);
-                        if (holder == null) continue;
-                        if (!Objects.requireNonNull(holder).getWorld().equals(player.getWorld()))continue;
-                        EntitiesRelatedToEgg.add(holderUUID);
-                    }
-                    double playerDistanceToTarget = Double.MAX_VALUE;
+                if(!trackerCompasses.isEmpty()){
                     Location playerLocation = player.getLocation();
-                    Location minEggRelatedEntityLocation = null;
-                    for (UUID uuid : EntitiesRelatedToEgg){
-                        Entity entity = getServer().getEntity(uuid);
-                        if(entity == null) continue;
-                        Location targetLocation = entity.getLocation();
-                        double playerToTargetDisTemp = targetLocation.distance(playerLocation);
-                        if (playerToTargetDisTemp < playerDistanceToTarget){
-                            minEggRelatedEntityLocation = targetLocation;
-                            playerDistanceToTarget = playerToTargetDisTemp;
+                    Location minTargetLocation = null;
+                    double minDistance = Double.MAX_VALUE;
+                    for (UUID eggUUID : registry.getAllDroppedEggItemIDs()){
+                      Entity eggEntity = getServer().getEntity(eggUUID);
+                      if (eggEntity != null && eggEntity.getWorld().equals(player.getWorld())){
+                          double dist = eggEntity.getLocation().distance(playerLocation);
+                          if(dist < minDistance){
+                              minDistance = dist;
+                              minTargetLocation = eggEntity.getLocation();
+                          }
+                      }
+                    }
+                    for (UUID holderUUID : registry.getAllInventoryHolders()){
+                        if(holderUUID.equals(player.getUniqueId())) continue;
+                        Player holder = getServer().getPlayer(holderUUID);
+                        if (holder != null && holder.getWorld().equals(player.getWorld())){
+                            double dist = holder.getLocation().distance(playerLocation);
+                            if(dist < minDistance){
+                                minDistance = dist;
+                                minTargetLocation = holder.getLocation();
+                            }
                         }
                     }
-                    if( minEggRelatedEntityLocation == null){
-                        // if not found
-                        // set compass to someplace which not place loadstone
-                        // and set bossbar to not found
-                        if(isPlayerOpenBossbarIndicator){
-                            BossBar bossbar = playerBossbarIndicator.GetBossBarFromPlayer(player.getUniqueId());
-                            bossbar.name(Component.text("Target Not Found",NamedTextColor.RED));
+                    boolean isBossBarOpen = playerBossbarIndicator.IsPlayerInitial(player.getUniqueId());
+                    if( minTargetLocation !=null ){
+                        if (isBossBarOpen) {
+                            playerBossbarIndicator.GetBossBarFromPlayer(player.getUniqueId())
+                                    .name(
+                                            Component.text("Target Position is : ", NamedTextColor.GREEN)
+                                                    .append(
+                                                            Component.text(minTargetLocation.getBlockX() + ", " + minTargetLocation.getBlockY() + ", " + minTargetLocation.getBlockZ(), NamedTextColor.YELLOW)
+                                                    )
+                                    );
                         }
-                        for(ItemStack stack : CompassItemStacks){
-                            ItemMeta meta = stack.getItemMeta();
-                            if (meta instanceof CompassMeta compassMeta){
-                                Location savedLot = compassMeta.getLodestone();
-                                Location setToLot = new Location(player.getWorld(), 0,-65,0);
-                                if (savedLot != null && savedLot.distance(setToLot) == 0) continue;
-                                compassMeta.setLodestoneTracked(true);
-                                compassMeta.setLodestone(setToLot);
-                                stack.setItemMeta(compassMeta);
-                            }
+                        for (ItemStack itemStack : trackerCompasses){
+                            CompassMeta meta = (CompassMeta) itemStack.getItemMeta();
+                            meta.setLodestoneTracked(false);
+                            meta.setLodestone(minTargetLocation);
                         }
                     }else{
-                        // if found
-                        // update compass position and bossbar
-                        if(isPlayerOpenBossbarIndicator){
-                            BossBar bossbar = playerBossbarIndicator.GetBossBarFromPlayer(player.getUniqueId());
-                            bossbar.name(Component.text("Target Position is : ",NamedTextColor.GREEN).append(
-                                                Component.text(
-                                                        minEggRelatedEntityLocation.getBlockX()+", "+
-                                                                minEggRelatedEntityLocation.getBlockY()+", "+
-                                                                minEggRelatedEntityLocation.getBlockZ(),
-                                                        NamedTextColor.YELLOW)
-                                            ));
+                        if(isBossBarOpen){
+                            playerBossbarIndicator.GetBossBarFromPlayer(player.getUniqueId())
+                                    .name(Component.text("Target Not Found", NamedTextColor.RED));
                         }
-                        for(ItemStack stack : CompassItemStacks){
-                            ItemMeta meta = stack.getItemMeta();
-                            if (meta instanceof CompassMeta compassMeta){
-                                compassMeta.setLodestoneTracked(false);
-                                compassMeta.setLodestone(minEggRelatedEntityLocation);
-                                stack.setItemMeta(compassMeta);
+                        for (ItemStack itemStack : trackerCompasses){
+                            CompassMeta meta = (CompassMeta) itemStack.getItemMeta();
+                            Location SettedLocation = meta.getLodestone();
+                            Location SetedToLocation = new Location(player.getWorld(),0,-65,0);
+                            if (SettedLocation == null || SetedToLocation.distance(SettedLocation) == 0){
+                                meta.setLodestoneTracked(true);
+                                meta.setLodestone(SettedLocation);
                             }
                         }
                     }
-
                 }else{
-                    // Bossbar can't be open when compass is not inside Player Inventory
-                    if (isPlayerOpenBossbarIndicator){
+                    if (playerBossbarIndicator.IsPlayerInitial(player.getUniqueId())) {
                         playerBossbarIndicator.RemovePlayer(player.getUniqueId());
                     }
                 }
 
-//                registry.setPlayerLocationByPlayerUUID(player.getUniqueId(),player.getLocation());
-//                    }
-//                    if (itemStack.getType() == Material.COMPASS) {
-//                        ItemMeta meta = itemStack.getItemMeta();
-//                        if (meta == null) continue;
-//                        if (meta.getPersistentDataContainer().getOrDefault(TrackerNSKey,PersistentDataType.BOOLEAN,false)){
-//                            CompassMeta cmeta = (CompassMeta) itemStack.getItemMeta();
-//                            if (cmeta == null) continue;
-//
-//                            double minDistance = Double.MAX_VALUE;
-//                            Location currentLocation = player.getLocation();
-//                            Location targetLocation = null;
-//                            for (UUID holderID : registry.getAllHolderIds()){
-//                                Location holderLocation = registry.getHolderLocationByUUID(holderID);
-//                                if (holderLocation == null) continue;
-//                                if (playerUUID.equals(holderID)){
-//                                    continue;
-//                                }
-//                                if (!currentLocation.getWorld().equals(holderLocation.getWorld())) continue;
-//                                double distance = currentLocation.distance(holderLocation);
-//                                if (distance < minDistance){
-//                                    minDistance = distance;
-//                                    targetLocation = holderLocation;
-//                                }
-//                            }
-//                            if (targetLocation != null){
-//                                cmeta.setLodestone(targetLocation);
-//                            }
-//
-//                            if (EnalbedBossbarIndicatorPlayerUUIDs.contains(player.getUniqueId())){
-//                                BossBar targetBossbar = playerBossbarIndicator.GetBossBarFromPlayer(player.getUniqueId());
-//                                if (targetLocation != null){
-//                                    targetBossbar.name(Component.text("Target Position is : ",NamedTextColor.GREEN)
-//                                            .append(
-//                                                Component.text(targetLocation.getBlockX()+", "+targetLocation.getBlockY()+", "+ targetLocation.getBlockZ(),NamedTextColor.YELLOW)
-//                                            )
-//                                    );
-//                                }else{
-//                                    targetBossbar.name(Component.text("Target Not Found",NamedTextColor.RED));
-//                                }
-//                            }
-//                            itemStack.setItemMeta(cmeta);
-//                        }
-//                    }
-//                }
+
             });
         },0L,5L);
         getServer().getWorlds().forEach((wordData)->{
@@ -273,25 +207,11 @@ public final class UndestoriedDragonEgg extends JavaPlugin implements Listener {
                     if (item.getItemStack().getType() == Material.DRAGON_EGG){
                         UUID thrower = item.getThrower();
                         if (thrower != null) {
-                            registry.setPlayerItemKeyPair(thrower,item.getUniqueId());
+                            registry.addDroppedEgg(item.getUniqueId(),thrower);
                         }
                     }
                 }
             }
-//            for (Player player : getServer().getOnlinePlayers()){
-//                boolean isPlayerHaveDragonEgg = false;
-//                for (ItemStack itemstack : player.getInventory().getContents()){
-//                    if(itemstack.getType() == Material.DRAGON_EGG){
-//                        isPlayerHaveDragonEgg = true;
-//                        break;
-//                    }
-//                }
-//                if (isPlayerHaveDragonEgg){
-//                    if (!registry.hasPlayer(player.getUniqueId())){
-//                        registry.setPlayerItemKeyPair(player.getUniqueId(),null);
-//                    }
-//                }
-//            }
         });
 
         LiteralArgumentBuilder<CommandSourceStack> command = Commands.literal("degg")
@@ -324,9 +244,7 @@ public final class UndestoriedDragonEgg extends JavaPlugin implements Listener {
                                 Map<Integer,ItemStack> leftover = sourceEntity.getInventory().addItem(compass);
                                 Location dropItemLot = sourceEntity.getLocation();
                                 if (!leftover.isEmpty()){
-                                    leftover.values().forEach(item -> {
-                                        sourceEntity.getWorld().dropItem(dropItemLot,item);
-                                    });
+                                    leftover.values().forEach(item -> sourceEntity.getWorld().dropItem(dropItemLot,item));
                                     sourceEntity.sendMessage(Component.text("Inventory full! Item dropped on the ground.", NamedTextColor.YELLOW));
                                 }else{
                                     sourceEntity.sendMessage(Component.text("Received Dragon Egg Tracker!", NamedTextColor.GREEN));
@@ -335,10 +253,8 @@ public final class UndestoriedDragonEgg extends JavaPlugin implements Listener {
                             })
                     )
                 );
-        LiteralCommandNode buildCommand = command.build();
-        this.getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, event -> {
-            event.registrar().register(buildCommand);
-        });
+        LiteralCommandNode<CommandSourceStack> buildCommand = command.build();
+        this.getLifecycleManager().registerEventHandler(LifecycleEvents.COMMANDS, event -> event.registrar().register(buildCommand));
     }
 
     @Override
@@ -377,31 +293,12 @@ public final class UndestoriedDragonEgg extends JavaPlugin implements Listener {
         Item item = event.getItemDrop();
         ItemStack stack = item.getItemStack();
         if (stack.getType() != Material.DRAGON_EGG) return;
-        ItemMeta meta = stack.getItemMeta();
-        if (meta != null){
-            meta.getPersistentDataContainer().set(MarkedUUID,PersistentDataType.STRING,item.getUniqueId().toString());
-            stack.setItemMeta(meta);
-            item.setItemStack(stack);
-        }
-        registry.setPlayerItemKeyPair(event.getPlayer().getUniqueId(), item.getUniqueId());
+        registry.addDroppedEgg(item.getUniqueId(),event.getPlayer().getUniqueId());
     }
 
     @EventHandler(ignoreCancelled = true)
     public void onEggPickup(EntityPickupItemEvent event) {
-        Item item = event.getItem();
-        ItemStack stack = item.getItemStack();
-        ItemMeta meta = stack.getItemMeta();
-        if (meta != null){
-            String UUIDString = meta.getPersistentDataContainer().get(MarkedUUID,PersistentDataType.STRING);
-            UUID ItemEntityUUID = null;
-            if (UUIDString != null) {
-                ItemEntityUUID = UUID.fromString(UUIDString);
-            }
-            registry.removePairFromItemEntityUUID(ItemEntityUUID);
-        }
-        if (registry.hasEggEntity(event.getItem().getUniqueId())) {
-            registry.removePairFromItemEntityUUID(event.getItem().getUniqueId());
-        }
+        registry.removeDroppedEgg(event.getItem().getUniqueId());
     }
 
     @EventHandler(ignoreCancelled = true)
@@ -443,42 +340,6 @@ public final class UndestoriedDragonEgg extends JavaPlugin implements Listener {
             event.setCancelled(true);
         } else {
             event.setCancelled(true);
-        }
-    }
-
-    @EventHandler (ignoreCancelled = true)
-    public void onPlayerMove(@NotNull PlayerMoveEvent event){
-        if (event.getFrom().getBlockX() == event.getTo().getBlockX() &&
-                event.getFrom().getBlockZ() == event.getTo().getBlockZ() &&
-                event.getFrom().getBlockY() == event.getTo().getBlockY()) {
-            return;
-        }
-
-        Player player = event.getPlayer();
-        if (!registry.hasPlayer(player.getUniqueId())) {
-            return;
-        }
-        UUID eggItemID = registry.getItemEntityUUIDByHolderUUID(player.getUniqueId());
-        if (eggItemID == null) {
-            return;
-        }
-
-        Entity itemEntity = getServer().getEntity(eggItemID);
-
-        if (itemEntity == null) return;
-        if ((itemEntity instanceof Item item)) {
-            Location playerLocation = player.getLocation();
-            Location itemLocation = item.getLocation();
-
-            if (!player.getWorld().equals(item.getWorld())) {
-                item.teleport(playerLocation);
-                return;
-            }
-            double distance = playerLocation.distance(itemLocation);
-            if (distance > 10) {
-                item.teleport(playerLocation);
-                item.setPickupDelay(10);
-            }
         }
     }
 
