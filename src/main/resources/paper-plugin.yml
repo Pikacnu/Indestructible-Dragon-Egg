@@ -1,0 +1,4 @@
+name: Undestoried-Dragon-Egg
+version: '1.0-SNAPSHOT'
+main: org.pikacnu.undestoriedDragonEgg.UndestoriedDragonEgg
+api-version: '26.3'
