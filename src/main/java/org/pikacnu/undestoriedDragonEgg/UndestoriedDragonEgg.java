@@ -252,7 +252,7 @@ public final class UndestoriedDragonEgg extends JavaPlugin implements Listener {
                                     meta.displayName(Component.text("Dragon Egg Tracker").decorate(TextDecoration.BOLD).decoration(TextDecoration.ITALIC,false));
                                     meta.lore(List.of(
                                             Component.text("Tracker of DragonEgg").decorate(TextDecoration.BOLD).color(TextColor.color(255, 252, 77)),
-                                            Component.text("Right click can toggle boosbar tracker").decorate(NamedTextColor.GRAY)
+                                            Component.text("Right click can toggle boosbar tracker").color(NamedTextColor.GRAY)
                                     ));
                                     Location lot = new Location(sourceEntity.getWorld(),0.0d,0.0d,0.0d);
                                     meta.setLodestone(lot);
@@ -278,6 +278,7 @@ public final class UndestoriedDragonEgg extends JavaPlugin implements Listener {
                                 .executes(context ->{
                                     CommandSender sender = context.getSource().getSender();
                                     sender.sendMessage(Component.text("This plugin in design to keep track of dragon eggs and Prevent it disappear.",NamedTextColor.YELLOW));
+                                    return 1;
                                 })
                 );
         LiteralCommandNode<CommandSourceStack> buildCommand = command.build();
